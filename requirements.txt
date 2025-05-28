@@ -1,6 +1,6 @@
 
-reflex==0.7.13
-supabase-py
+reflex
+supabase
 celery
 redis
 openai

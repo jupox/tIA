@@ -422,32 +422,4 @@ volumes:
   # These directories would need to exist locally, typically by cloning the Supabase/supabase repo
   # or by creating them and letting Supabase services initialize default files if possible.
   # For the purpose of this task, we assume these paths are correct as per official Supabase setup.
-```
-**Key changes and considerations during the merge:**
 
-1.  **Base Structure:** Started with the official Supabase `docker-compose.yml` content.
-2.  **Service Integration:**
-    *   The existing `redis`, `web`, and `worker` services from the project were added under the `services:` key.
-    *   The `db` service from Supabase is the PostgreSQL instance.
-    *   The `kong` service from Supabase is the API gateway.
-3.  **Dependencies:**
-    *   `web` service `depends_on`: `redis`, `kong`, `db`. This ensures Redis is started, Kong (the Supabase API gateway) is started, and the database is healthy before the web application attempts to connect or run.
-    *   `worker` service `depends_on`: `redis`, `kong`, `db`. Similar reasons: Redis for Celery, Kong if tasks make API calls (though direct DB access is more common for tasks), and `db` for direct database operations by tasks.
-4.  **Volumes:**
-    *   The `db-config` named volume from the official Supabase file is included.
-    *   The `redis_data` named volume from the project's original compose file is included.
-    *   The various `./volumes/...` bind mounts defined in the official Supabase services are preserved as-is. It's assumed these paths will be available in the context where this `docker-compose.yml` is run (e.g., if the user has cloned the Supabase repo and is running this from within the `docker` subdirectory, or if they create these `./volumes` directories).
-5.  **Environment Variables & `.env`:**
-    *   The `web` and `worker` services continue to use `env_file: - .env`.
-    *   The Supabase services also source variables from this `.env` file (e.g., `${POSTGRES_PASSWORD}`, `${JWT_SECRET}`). The user will need a comprehensive `.env` file.
-    *   For the integrated setup, `.env` should include:
-        *   `SUPABASE_URL=http://localhost:${KONG_HTTP_PORT:-8000}` (for the Reflex app to call from the host via Kong).
-        *   `SUPABASE_SERVICE_KEY` and `ANON_KEY` (default local Supabase keys).
-        *   `REDIS_URL=redis://redis:6379/0` (for `web` and `worker` to connect to the `redis` service).
-        *   All other variables required by the local Supabase stack (see Supabase `.env.example`).
-6.  **Networking:** All services are on the default Docker Compose network, allowing them to reach each other by service name (e.g., `db`, `kong`, `redis`).
-7.  **Image Versions:** I used the specific image versions that were present in the fetched Supabase `docker-compose.yml` to maintain consistency with that snapshot.
-8.  **Port for Analytics:** Changed analytics port from `4000:4000` to `4001:4000` on the host side to prevent potential conflicts if the user is already running something on port 4000. Internal port remains 4000.
-9.  **Supavisor Port:** The `supavisor` service exposes the PostgreSQL connection pool. The `.env` file will need `POSTGRES_PORT_SUPAVISOR` (for host exposure, e.g., 54322) and `POSTGRES_PORT_SUPAVISOR_INTERNAL` (internal, usually 5432). The `db` service itself uses `POSTGRES_PORT` for its internal operations. Applications should connect via Supavisor's exposed port.
-
-This merged file should now correctly define the full stack.
