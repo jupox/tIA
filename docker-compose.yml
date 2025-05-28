@@ -1,39 +1,453 @@
-version: '3.8'
+# Supabase docker-compose.yml as base.
+# REFLEX APP SERVICES (redis, web, worker) ADDED BELOW SUPABASE SERVICES.
+# Make sure to have a .env file configured as per README instructions.
+
+name: supabase # From official Supabase file
 
 services:
-  redis:
+  # --- Official Supabase Services (from https://raw.githubusercontent.com/supabase/supabase/master/docker/docker-compose.yml) ---
+  studio:
+    container_name: supabase-studio
+    image: supabase/studio:2025.05.19-sha-3487831 # Using a recent fixed version from provided output
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://studio:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})"
+        ]
+      timeout: 10s
+      interval: 5s
+      retries: 3
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION} # From .env
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT} # From .env
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-} # From .env (user's actual key)
+
+      SUPABASE_URL: http://kong:8000 # Internal URL for Studio to reach Kong
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL} # External URL, e.g., http://localhost:8000 (from .env)
+      SUPABASE_ANON_KEY: ${ANON_KEY} # From .env
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY} # From .env
+      AUTH_JWT_SECRET: ${JWT_SECRET} # From .env
+
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY} # From .env
+      LOGFLARE_URL: http://analytics:4000
+      NEXT_PUBLIC_ENABLE_LOGS: true
+      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+
+  kong:
+    container_name: supabase-kong
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      - "${KONG_HTTP_PORT}:8000/tcp"  # e.g., 8000:8000 (from .env)
+      - "${KONG_HTTPS_PORT}:8443/tcp" # e.g., 8443:8443 (from .env)
+    volumes:
+      - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z # Path from official file
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${ANON_KEY} # From .env
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY} # From .env
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME} # From .env
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD} # From .env
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+
+  auth:
+    container_name: supabase-auth
+    image: supabase/gotrue:v2.172.1 # Using a recent fixed version
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL} # e.g., http://localhost:8000 (from .env)
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB} # Connects to 'db' service
+
+      GOTRUE_SITE_URL: ${SITE_URL} # e.g., http://localhost:3000 for Reflex app (from .env)
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS} # From .env
+      GOTRUE_DISABLE_SIGNUP: "${DISABLE_SIGNUP}" # From .env
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "${JWT_EXPIRY}" # From .env
+      GOTRUE_JWT_SECRET: ${JWT_SECRET} # From .env
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "${ENABLE_EMAIL_SIGNUP}" # From .env
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "${ENABLE_ANONYMOUS_USERS}" # From .env
+      GOTRUE_MAILER_AUTOCONFIRM: "${ENABLE_EMAIL_AUTOCONFIRM}" # From .env
+      
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL} # From .env
+      GOTRUE_SMTP_HOST: ${SMTP_HOST} # From .env
+      GOTRUE_SMTP_PORT: ${SMTP_PORT} # From .env
+      GOTRUE_SMTP_USER: ${SMTP_USER} # From .env
+      GOTRUE_SMTP_PASS: ${SMTP_PASS} # From .env
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME} # From .env
+      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE} # From .env
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION} # From .env
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY} # From .env
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE} # From .env
+
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "${ENABLE_PHONE_SIGNUP}" # From .env
+      GOTRUE_SMS_AUTOCONFIRM: "${ENABLE_PHONE_AUTOCONFIRM}" # From .env
+
+  rest:
+    container_name: supabase-rest
+    image: postgrest/postgrest:v12.2.12 # Using a recent fixed version
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB} # Connects to 'db' service
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS} # From .env
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET} # From .env
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET} # From .env
+      PGRST_APP_SETTINGS_JWT_EXP: "${JWT_EXPIRY}" # From .env
+    command: ["postgrest"]
+
+  realtime:
+    container_name: realtime-dev.supabase-realtime # Name from official file
+    image: supabase/realtime:v2.34.47 # Using a recent fixed version
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sSfL", "--head", "-o", "/dev/null", "-H", "Authorization: Bearer ${ANON_KEY}", "http://localhost:4000/api/tenants/realtime-dev/health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    environment:
+      PORT: 4000
+      DB_HOST: db # Connects to 'db' service
+      DB_PORT: ${POSTGRES_PORT} # From .env
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+      DB_NAME: ${POSTGRES_DB} # From .env
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET} # From .env
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE} # From .env
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: true
+      RUN_JANITOR: true
+
+  storage:
+    container_name: supabase-storage
+    image: supabase/storage-api:v1.22.17 # Using a recent fixed version
+    restart: unless-stopped
+    volumes:
+      - ./volumes/storage:/var/lib/storage:z # Path from official file
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://storage:5000/status"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+      imgproxy:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY} # From .env
+      SERVICE_KEY: ${SERVICE_ROLE_KEY} # From .env
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET} # From .env
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB} # Connects to 'db' service
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://imgproxy:5001
+
+  imgproxy:
+    container_name: supabase-imgproxy
+    image: darthsim/imgproxy:v3.8.0
+    restart: unless-stopped
+    volumes:
+      - ./volumes/storage:/var/lib/storage:z # Path from official file
+    healthcheck:
+      test: ["CMD", "imgproxy", "health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    environment:
+      IMGPROXY_BIND: ":5001"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_ENABLE_WEBP_DETECTION: "${IMGPROXY_ENABLE_WEBP_DETECTION}" # From .env
+
+  meta:
+    container_name: supabase-meta
+    image: supabase/postgres-meta:v0.89.0 # Using a recent fixed version
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db # Connects to 'db' service
+      PG_META_DB_PORT: ${POSTGRES_PORT} # From .env
+      PG_META_DB_NAME: ${POSTGRES_DB} # From .env
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+
+  functions:
+    container_name: supabase-edge-functions
+    image: supabase/edge-runtime:v1.67.4 # Using a recent fixed version
+    restart: unless-stopped
+    volumes:
+      - ./volumes/functions:/home/deno/functions:Z # Path from official file
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      JWT_SECRET: ${JWT_SECRET} # From .env
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY} # From .env
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY} # From .env
+      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB} # Connects to 'db' service
+      VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}" # From .env
+    command: ["start", "--main-service", "/home/deno/functions/main"]
+
+  analytics:
+    container_name: supabase-analytics
+    image: supabase/logflare:1.12.0
+    restart: unless-stopped
+    ports:
+      - "4001:4000" # Changed host port to 4001 to avoid conflict if user already has 4000
+    healthcheck:
+      test: ["CMD", "curl", "http://localhost:4000/health"] # Internal port is 4000
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      LOGFLARE_NODE_HOST: 127.0.0.1
+      DB_USERNAME: supabase_admin
+      DB_DATABASE: _supabase
+      DB_HOSTNAME: db # Connects to 'db' service
+      DB_PORT: ${POSTGRES_PORT} # From .env
+      DB_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+      DB_SCHEMA: _analytics
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY} # From .env
+      LOGFLARE_SINGLE_TENANT: true
+      LOGFLARE_SUPABASE_MODE: true
+      LOGFLARE_MIN_CLUSTER_SIZE: 1
+      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/_supabase
+      POSTGRES_BACKEND_SCHEMA: _analytics
+      LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
+
+  db: # This is the PostgreSQL database service
+    container_name: supabase-db
+    image: supabase/postgres:15.8.1.060 # Using a recent fixed version
+    restart: unless-stopped
+    volumes: # Paths from official file
+      - ./volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
+      - ./volumes/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
+      - ./volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
+      - ./volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      - ./volumes/db/data:/var/lib/postgresql/data:Z
+      - ./volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
+      - ./volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
+      - ./volumes/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:Z
+      - db-config:/etc/postgresql-custom
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"] # Internal check
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      vector:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: ${POSTGRES_PORT} # Internal port, from .env
+      POSTGRES_PORT: ${POSTGRES_PORT} # From .env
+      PGPASSWORD: ${POSTGRES_PASSWORD} # From .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+      PGDATABASE: ${POSTGRES_DB} # From .env
+      POSTGRES_DB: ${POSTGRES_DB} # From .env
+      JWT_SECRET: ${JWT_SECRET} # From .env
+      JWT_EXP: "${JWT_EXPIRY}" # From .env
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
+
+  vector:
+    container_name: supabase-vector
+    image: timberio/vector:0.28.1-alpine
+    restart: unless-stopped
+    volumes: # Paths from official file
+      - ./volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
+      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://vector:9001/health"]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    environment:
+      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY} # From .env
+    command: ["--config", "/etc/vector/vector.yml"]
+    security_opt:
+      - "label=disable"
+
+  supavisor:
+    container_name: supabase-pooler
+    image: supabase/supavisor:2.5.1
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT_SUPAVISOR}:${POSTGRES_PORT_SUPAVISOR_INTERNAL}" # e.g. 54322:5432 (from .env)
+      - "${POOLER_PROXY_PORT_TRANSACTION}:6543" # From .env
+    volumes:
+      - ./volumes/pooler/pooler.exs:/etc/pooler/pooler.exs:ro,z # Path from official file
+    healthcheck:
+      test: ["CMD", "curl", "-sSfL", "--head", "-o", "/dev/null", "http://127.0.0.1:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      POSTGRES_PORT: ${POSTGRES_PORT} # Internal port Supavisor connects to actual DB on, from .env
+      POSTGRES_DB: ${POSTGRES_DB} # From .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+      DATABASE_URL: ecto://supabase_admin:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/_supabase # Connects to 'db' service
+      CLUSTER_POSTGRES: true
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE} # From .env
+      VAULT_ENC_KEY: ${VAULT_ENC_KEY} # From .env
+      API_JWT_SECRET: ${JWT_SECRET} # From .env
+      METRICS_JWT_SECRET: ${JWT_SECRET} # From .env
+      REGION: local
+      ERL_AFLAGS: -proto_dist inet_tcp
+      POOLER_TENANT_ID: ${POOLER_TENANT_ID} # From .env
+      POOLER_DEFAULT_POOL_SIZE: "${POOLER_DEFAULT_POOL_SIZE}" # From .env
+      POOLER_MAX_CLIENT_CONN: "${POOLER_MAX_CLIENT_CONN}" # From .env
+      POOLER_POOL_MODE: transaction
+    command: ["/bin/sh", "-c", "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"]
+
+  # --- Project Specific Services ---
+  redis: # Our project's Redis service
     image: "redis:alpine"
     ports:
-      - "6379:6379"
+      - "6379:6379" # Standard Redis port for host access
     volumes:
-      - redis_data:/data
+      - redis_data:/data # Persist Redis data
+    restart: unless-stopped
 
-  web:
-    build: .
-    command: web # This will be passed to entrypoint.sh
+  web: # Our Reflex application
+    build: . # Build from local Dockerfile
+    command: web # Passed to entrypoint.sh
     ports:
-      - "3000:3000"
+      - "3000:3000" # Reflex app runs on port 3000
     volumes:
-      - .:/app # Mount current directory to /app in container for live reload
-              # Note: For production, you might prefer not to mount and rely on COPY in Dockerfile
+      - .:/app # Mount current directory for live reload
     env_file:
-      - .env # For SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY, REDIS_URL
+      - .env # For SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY, REDIS_URL etc.
     depends_on:
-      - redis
-    # environment: # Alternative to env_file or for specific overrides
-      # - REDIS_URL=redis://redis:6379/0 
+      redis:
+        condition: service_started
+      kong: # Web app should interact with Supabase via Kong
+        condition: service_started
+      db: # Ensure DB is healthy before web app starts, as it might do initial checks or migrations
+        condition: service_healthy
 
-  worker:
-    build: .
-    command: worker # This will be passed to entrypoint.sh
+  worker: # Our Celery worker
+    build: . # Build from local Dockerfile
+    command: worker # Passed to entrypoint.sh
     volumes:
-      - .:/app # Mount current directory to /app in container
+      - .:/app # Mount current directory
     env_file:
-      - .env
+      - .env # For SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY, REDIS_URL etc.
     depends_on:
-      - redis
-    # environment:
-      # - REDIS_URL=redis://redis:6379/0
+      redis:
+        condition: service_started
+      kong: # If tasks make HTTP calls to Supabase, they should go via Kong
+        condition: service_started
+      db: # Tasks will directly interact with the database
+        condition: service_healthy
 
 volumes:
-  redis_data: # Persist Redis data
+  db-config: # From official Supabase file
+  redis_data: # From our project's original docker-compose.yml
+  # Note: The ./volumes/* paths used by Supabase services are bind mounts, not named volumes defined here.
+  # These directories would need to exist locally, typically by cloning the Supabase/supabase repo
+  # or by creating them and letting Supabase services initialize default files if possible.
+  # For the purpose of this task, we assume these paths are correct as per official Supabase setup.
+```
+**Key changes and considerations during the merge:**
+
+1.  **Base Structure:** Started with the official Supabase `docker-compose.yml` content.
+2.  **Service Integration:**
+    *   The existing `redis`, `web`, and `worker` services from the project were added under the `services:` key.
+    *   The `db` service from Supabase is the PostgreSQL instance.
+    *   The `kong` service from Supabase is the API gateway.
+3.  **Dependencies:**
+    *   `web` service `depends_on`: `redis`, `kong`, `db`. This ensures Redis is started, Kong (the Supabase API gateway) is started, and the database is healthy before the web application attempts to connect or run.
+    *   `worker` service `depends_on`: `redis`, `kong`, `db`. Similar reasons: Redis for Celery, Kong if tasks make API calls (though direct DB access is more common for tasks), and `db` for direct database operations by tasks.
+4.  **Volumes:**
+    *   The `db-config` named volume from the official Supabase file is included.
+    *   The `redis_data` named volume from the project's original compose file is included.
+    *   The various `./volumes/...` bind mounts defined in the official Supabase services are preserved as-is. It's assumed these paths will be available in the context where this `docker-compose.yml` is run (e.g., if the user has cloned the Supabase repo and is running this from within the `docker` subdirectory, or if they create these `./volumes` directories).
+5.  **Environment Variables & `.env`:**
+    *   The `web` and `worker` services continue to use `env_file: - .env`.
+    *   The Supabase services also source variables from this `.env` file (e.g., `${POSTGRES_PASSWORD}`, `${JWT_SECRET}`). The user will need a comprehensive `.env` file.
+    *   For the integrated setup, `.env` should include:
+        *   `SUPABASE_URL=http://localhost:${KONG_HTTP_PORT:-8000}` (for the Reflex app to call from the host via Kong).
+        *   `SUPABASE_SERVICE_KEY` and `ANON_KEY` (default local Supabase keys).
+        *   `REDIS_URL=redis://redis:6379/0` (for `web` and `worker` to connect to the `redis` service).
+        *   All other variables required by the local Supabase stack (see Supabase `.env.example`).
+6.  **Networking:** All services are on the default Docker Compose network, allowing them to reach each other by service name (e.g., `db`, `kong`, `redis`).
+7.  **Image Versions:** I used the specific image versions that were present in the fetched Supabase `docker-compose.yml` to maintain consistency with that snapshot.
+8.  **Port for Analytics:** Changed analytics port from `4000:4000` to `4001:4000` on the host side to prevent potential conflicts if the user is already running something on port 4000. Internal port remains 4000.
+9.  **Supavisor Port:** The `supavisor` service exposes the PostgreSQL connection pool. The `.env` file will need `POSTGRES_PORT_SUPAVISOR` (for host exposure, e.g., 54322) and `POSTGRES_PORT_SUPAVISOR_INTERNAL` (internal, usually 5432). The `db` service itself uses `POSTGRES_PORT` for its internal operations. Applications should connect via Supavisor's exposed port.
+
+This merged file should now correctly define the full stack.
