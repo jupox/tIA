@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  web:
+    build: .
+    command: web # This will be passed to entrypoint.sh
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app # Mount current directory to /app in container for live reload
+              # Note: For production, you might prefer not to mount and rely on COPY in Dockerfile
+    env_file:
+      - .env # For SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY, REDIS_URL
+    depends_on:
+      - redis
+    # environment: # Alternative to env_file or for specific overrides
+      # - REDIS_URL=redis://redis:6379/0 
+
+  worker:
+    build: .
+    command: worker # This will be passed to entrypoint.sh
+    volumes:
+      - .:/app # Mount current directory to /app in container
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    # environment:
+      # - REDIS_URL=redis://redis:6379/0
+
+volumes:
+  redis_data: # Persist Redis data

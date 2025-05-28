@@ -209,3 +209,60 @@ Deploying this application involves several components:
 *   Configure logging and monitoring for all components.
 
 This README provides a comprehensive guide to understanding, setting up, and running the AI Decision Support Tool.
+
+## Running with Docker
+
+This application can be run using Docker and Docker Compose, which simplifies dependency management and deployment.
+
+**Prerequisites:**
+*   Docker installed (https://docs.docker.com/get-docker/)
+*   Docker Compose installed (https://docs.docker.com/compose/install/)
+
+**Configuration:**
+
+1.  **Ensure you have a `.env` file** in the project root directory. This file should contain your environment variables. For Docker Compose to work correctly with the provided configuration, ensure the following are set:
+    ```env
+    SUPABASE_URL="YOUR_SUPABASE_PROJECT_URL"
+    SUPABASE_KEY="YOUR_SUPABASE_ANON_OR_SERVICE_ROLE_KEY"
+    OPENAI_API_KEY="YOUR_OPENAI_API_KEY"
+    REDIS_URL="redis://redis:6379/0" 
+    ```
+    *   **Important:** `REDIS_URL` must be set to `redis://redis:6379/0` for the `web` and `worker` services to connect to the `redis` service defined in `docker-compose.yml`.
+    *   The Supabase instance is expected to be externally accessible; this Docker setup does not containerize Supabase.
+
+**Running the Application:**
+
+1.  **Build and Start Services:**
+    Open your terminal in the project root directory and run:
+    ```bash
+    docker-compose up --build -d
+    ```
+    *   `--build`: Forces Docker Compose to build the images from your Dockerfile before starting the services.
+    *   `-d`: Runs the services in detached mode (in the background).
+
+    This command will:
+    *   Pull the Redis image if you don't have it.
+    *   Build the Docker image for your application (for both `web` and `worker` services using the same Dockerfile).
+    *   Start the Redis, web (Reflex app), and Celery worker services.
+
+2.  **Accessing the Application:**
+    Once the services are up, the web application should be accessible at `http://localhost:3000`.
+
+3.  **Viewing Logs:**
+    To view the logs from the web server or the Celery worker:
+    ```bash
+    docker-compose logs web
+    docker-compose logs worker
+    ```
+    You can also follow logs in real-time:
+    ```bash
+    docker-compose logs -f web
+    docker-compose logs -f worker
+    ```
+
+4.  **Stopping the Application:**
+    To stop all running services:
+    ```bash
+    docker-compose down
+    ```
+    This will stop and remove the containers. If you want to remove the volumes as well (like the `redis_data` volume), you can use `docker-compose down -v`.
