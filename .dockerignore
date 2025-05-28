@@ -1,0 +1,52 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Git
+.git/
+.gitignore
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+
+# Environment files
+.env
+*.env.*
+!*.env.example # if you have example env files you want to include
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Other project specific
+.pytest_cache/
+htmlcov/
+.coverage
+*.sqlite3
+*.db
+node_modules/ # If any frontend assets were built with Node.js locally
+.web/ # Reflex build directory
+assets/ # If assets are generated or large and not needed in final image
+# Add other project-specific files or directories to ignore
