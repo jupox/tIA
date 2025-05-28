@@ -17,8 +17,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the entrypoint script into the container at /app
 COPY entrypoint.sh .
+
 # Make the entrypoint script executable
 RUN chmod +x /app/entrypoint.sh
+
+# Ensure correct line endings for the entrypoint script (convert CR/LF to LF)
+RUN sed -i 's/$//' /app/entrypoint.sh
 
 # Copy the rest of the application
 COPY . .
