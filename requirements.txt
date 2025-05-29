@@ -1,8 +1,6 @@
-
-reflex
 supabase
 celery
 redis
-openai
+openai>=1.0.0
 python-dotenv
 reflex==0.7.13

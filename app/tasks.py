@@ -2,14 +2,17 @@ from app.celery_app import celery_app
 from app.utils import get_supabase_client # Import the helper
 # from app.models import Prompt, Result # If needed for type hinting or ORM-like use
 import openai
+from dotenv import load_dotenv
+load_dotenv()
 import os
 import json
 from datetime import datetime
+# Use the new OpenAI client for v1.x
+from openai import OpenAI
 
-# Ensure OPENAI_API_KEY is available, ideally from rxconfig or environment
 OPENAI_API_KEY_FROM_ENV = os.getenv("OPENAI_API_KEY") 
 if OPENAI_API_KEY_FROM_ENV:
-    openai.api_key = OPENAI_API_KEY_FROM_ENV
+    client = OpenAI(api_key=OPENAI_API_KEY_FROM_ENV)
 else:
     print("Warning: OPENAI_API_KEY not found. AI features will be limited.")
 
@@ -25,17 +28,17 @@ def information_retrieval_task(prompt_id: int, user_prompt: str):
 
         # 2. Perform information retrieval (simulated with OpenAI call for simplicity)
         raw_data_content = {}
-        if openai.api_key: # Check if API key was actually set
+        if OPENAI_API_KEY_FROM_ENV:
             try:
-                # A simple completion call as a placeholder for web search + LLM
-                # Note: Using a newer model like "gpt-3.5-turbo-instruct" for completions if "text-davinci-003" is deprecated
-                # For chat models, the API call structure is different (openai.ChatCompletion.create)
-                response = openai.Completion.create(
-                    engine="gpt-3.5-turbo-instruct", # text-davinci-003 is often legacy
-                    prompt=f"Gather key information and potential options related to the following query: {user_prompt}. Present it as a structured summary.",
-                    max_tokens=500 
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that summarizes and extracts options."},
+                        {"role": "user", "content": f"Gather key information and potential options related to the following query: {user_prompt}. Present it as a structured summary."}
+                    ],
+                    max_tokens=500
                 )
-                raw_data_content["llm_response"] = response.choices[0].text.strip()
+                raw_data_content["llm_response"] = response.choices[0].message.content.strip()
             except Exception as e:
                 print(f"OpenAI call failed for prompt_id {prompt_id}: {e}")
                 raw_data_content["error"] = f"OpenAI call failed: {str(e)}"
@@ -125,24 +128,20 @@ def process_and_summarize_task(prompt_id: int):
         summary_text = "Default summary: No specific summary generated."
 
         try:
-            # Example prompt to the LLM for summarization and option extraction
-            # For more reliable JSON, Chat models (gpt-3.5-turbo, gpt-4) with function calling or specific JSON mode prompts are better.
-            # Using Completion endpoint here for consistency with previous task, but it's less ideal for structured JSON.
             summarization_prompt = (
                 f"Analyze the following text and extract key options or points, and provide a concise summary.\n"
-                f"Text to analyze: \"{content_to_summarize}\"\n\n" # Added quotes around content_to_summarize
+                f"Text to analyze: \"{content_to_summarize}\"\n\n"
                 f"Respond in a JSON format with two keys: 'options' (a list of strings) and 'summary' (a string)."
             )
-            
-            # Attempt to get structured JSON. This is tricky with davinci.
-            # A Chat model (e.g. gpt-3.5-turbo) would be better here with a system message.
-            response = openai.Completion.create(
-                engine="gpt-3.5-turbo-instruct", # Or your preferred model
-                prompt=summarization_prompt,
-                max_tokens=700, # Adjust as needed
-                temperature=0.5 # Lower temperature for more factual, less creative output
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that summarizes and extracts options."},
+                    {"role": "user", "content": summarization_prompt}
+                ],
+                max_tokens=700
             )
-            ai_output_text = response.choices[0].text.strip()
+            ai_output_text = response.choices[0].message.content.strip()
 
             # Attempt to parse the AI output as JSON
             try:

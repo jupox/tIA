@@ -4,7 +4,7 @@ import os
 # It's better to ensure rxconfig is importable or pass vars.
 # For worker context, direct env var reading is often more straightforward.
 SUPABASE_URL = os.getenv("SUPABASE_URL", "YOUR_SUPABASE_URL_HERE")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "YOUR_SUPABASE_KEY_HERE")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "YOUR_SUPABASE_KEY_HERE")
 
 def get_supabase_client() -> Client:
     # Ensure that SUPABASE_URL and SUPABASE_KEY are not the placeholder values
