@@ -51,20 +51,6 @@ Before running the application with Docker Compose, you need to set up your envi
         *   `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key. The default in `.env.example` is a common one for local Supabase development.
         *   *Note*: These keys are also used by the internal Supabase services (like Kong) via `ANON_KEY` and `SERVICE_ROLE_KEY` variables. Ensure consistency if you change them from the defaults.
 
-    *   **Critical Supabase Variables (MUST CHANGE in `.env` for security and proper functioning of the local Supabase stack):**
-        *   `POSTGRES_PASSWORD`: Choose a strong password for the local PostgreSQL database.
-        *   `JWT_SECRET`: A strong, random secret for JWT signing (at least 32 characters).
-        *   `SECRET_KEY_BASE`: A strong, random secret for Realtime functionality.
-        *   `VAULT_ENC_KEY`: A strong, random secret for Supabase Vault (encryption at rest for secrets).
-
-    *   **Supabase Public URL and Ports (for host access and external references):**
-        *   `SUPABASE_PUBLIC_URL=http://localhost:8000`: This is how services like Supabase Studio and your frontend (client-side) will refer to the Supabase API from your host machine. `8000` should match the host port mapped to `kong` service's internal port `8000` (defined by `KONG_HTTP_PORT` in `.env`).
-        *   `KONG_HTTP_PORT=8000`: Host port for Kong's HTTP listener.
-        *   `SITE_URL=http://localhost:3000`: URL of your Reflex frontend, used for email redirects from Supabase Auth. `3000` should match the host port mapped to your `web` service.
-        *   `POSTGRES_PORT_SUPAVISOR=54322`: Example host port for accessing the Supabase database directly via the Supavisor connection pooler. The internal port for Supavisor is usually `5432`.
-
-    *   **Other Supabase Variables**:
-        *   The `.env.example` file lists many other variables used by the Supabase stack (e.g., for Auth, Storage, SMTP). The defaults provided are generally suitable for local development. For example, SMTP is configured to point to a non-existent `mailhog` service; if you need local email testing, you would add a MailHog service to your `docker-compose.yml` or use an external SMTP service.
 
 **Running the Application with Docker Compose:**
 
@@ -121,7 +107,6 @@ Before running the application with Docker Compose, you need to set up your envi
     # Example:
     docker-compose logs web
     docker-compose logs worker
-    docker-compose logs supabase-db 
     ```
     To follow logs in real-time:
     ```bash

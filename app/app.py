@@ -103,12 +103,7 @@ class State(rx.State):
                      self.result = f"Status: {current_status}. Summary generation is pending. Click Refresh again shortly."
                      # Trigger the next task if it hasn't been triggered automatically
                      # This is a good place to ensure the summarization task is called
-                     process_and_summarize_task.delay(prompt_id=self.current_prompt_id)
-                else:
-                    self.result = f"Processing is not yet complete. Current status: {current_status}"
-                    # Clear previous data if status is just pending
-                    self.summary = ""
-                    self.processed_options = []
+                     process_and_summarize_task.delay(prompt_id=self.current_prompt_id)                
                 elif current_status == "retrieval_error":
                     self.error_message = "An error occurred while fetching information. Please try submitting again or contact support if the issue persists."
                     self.result = "" # Clear general result message
@@ -118,7 +113,7 @@ class State(rx.State):
                     self.error_message = "An error occurred while processing the results. Please try again or contact support."
                     self.result = "" # Clear general result message
                     self.summary = ""
-                    self.processed_options = []
+                    self.processed_options = []                
                 else: # Catch-all for other statuses or unexpected ones
                     self.result = f"Processing is not yet complete. Current status: {current_status}"
                     self.summary = ""
@@ -137,12 +132,13 @@ class State(rx.State):
 def index():
     return rx.container(
         rx.vstack(
-            rx.heading("AI Decision Support Tool", size="lg", margin_bottom="1em"),
+            rx.heading("AI Decision Support Tool Task", size="9"),
+            rx.heading("Task IA - TIA", size="6", margin_bottom="1em"),
             
             rx.input(
                 placeholder="Enter your decision prompt here...",
                 on_blur=State.set_prompt,
-                style={"margin_bottom": "0.5em"},
+                style={"margin_bottom": "0.5em", "width": "100%"},
                 is_disabled=State.is_loading,
             ),
             
@@ -159,7 +155,7 @@ def index():
                     on_click=State.fetch_results,
                     is_disabled=rx.cond(State.current_prompt_id.is_none() | State.is_loading, True, False),
                 ),
-                spacing="1em",
+                spacing="1",
                 style={"margin_bottom": "1em"}
             ),
             
@@ -182,8 +178,8 @@ def index():
 
                 rx.cond(
                     State.summary != "",
-                    rx.vstack(
-                        rx.heading("Summary:", size="md", margin_top="1em"),
+                    rx.hstack(
+                        rx.heading("Summary:", size="6", margin_top="1em"),
                         rx.text(State.summary, white_space="pre-wrap"), # pre-wrap to respect newlines from LLM
                         align_items="flex-start",
                         width="100%",
@@ -194,25 +190,25 @@ def index():
 
                 rx.cond(
                     State.processed_options.length() > 0, # Check if list is not empty
-                    rx.vstack(
-                        rx.heading("Processed Options:", size="md", margin_top="1em"),
-                        rx.ordered_list(
+                    rx.hstack(
+                        rx.heading("Processed Options:", size="6", margin_top="1em"),
+                        rx.list.ordered(
                             items=State.processed_options, # Directly pass the list
-                            render_item=lambda item, index: rx.list_item(rx.text(item)), # Render each item
+                            # render_item=lambda item, index: rx.list_item(rx.text(item)), # Render each item
                         ),
                         align_items="flex-start",
                         width="100%"
                     ),
                     rx.fragment()
                 ),
-                spacing="0.5em",
+                spacing="1",
                 width="100%",
                 padding="1em",
                 border="1px solid #ddd",
                 border_radius="md",
                 min_height="200px" # Ensure a minimum height for the results area
             ),
-            spacing="1em",
+            spacing="1",
             width="100%"
         ),
         padding="2em",
@@ -221,13 +217,5 @@ def index():
     )
 
 # Add state and page to the app.
-app = rx.App(state=State)
+app = rx.App()
 app.add_page(index)
-# app.compile() # compile() is usually called by reflex CLI, not explicitly here
-# For Reflex versions that require explicit compile, ensure it's used appropriately.
-# If you are running `reflex run`, this explicit compile() might not be needed or could conflict.
-# Typically, `rx.App()` is enough and the CLI handles compilation.
-# Let's assume the latest Reflex behavior where explicit compile() in app.py is less common.
-# If errors occur, this might be a point to check against Reflex documentation for the specific version.
-# For now, commenting it out as it's often handled by the `reflex run` command.
-app.compile() # Re-added as per original structure, ensure this matches Reflex version best practice.

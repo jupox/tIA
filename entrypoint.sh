@@ -17,7 +17,7 @@ case "$1" in
             export PATH="$PATH:/home/swebot/.local/bin"
         fi
 
-        exec reflex run --host 0.0.0.0 --port 3000
+        exec reflex run --frontend-only
         ;;
     worker)
         echo "Starting Celery worker..."

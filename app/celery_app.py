@@ -1,9 +1,12 @@
 from celery import Celery
+from dotenv import load_dotenv
+load_dotenv()
 import os
 
 # It's better to read from rxconfig if possible, but for worker context,
 # environment variables are robust.
-REDIS_URL_FROM_ENV = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL_FROM_ENV = os.getenv("REDIS_", "redis://redis:6379/0")
+print(f"Using Redis URL: {REDIS_URL_FROM_ENV}")
 
 celery_app = Celery(
     "worker", # Naming the celery application

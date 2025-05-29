@@ -4,3 +4,5 @@ supabase
 celery
 redis
 openai
+python-dotenv
+reflex==0.7.13

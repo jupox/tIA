@@ -50,3 +50,26 @@ node_modules/ # If any frontend assets were built with Node.js locally
 .web/ # Reflex build directory
 assets/ # If assets are generated or large and not needed in final image
 # Add other project-specific files or directories to ignore
+
+# Docker ignore patterns
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.pot
+*.mo
+.env
+.env.*
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.git/
+.gitignore
+.DS_Store
+node_modules/
+.web/
