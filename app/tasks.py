@@ -84,8 +84,19 @@ def information_retrieval_task(prompt_id: int, user_prompt: str):
 
 
 @celery_app.task
-def process_and_summarize_task(prompt_id: int):
+def process_and_summarize_task(prompt_id: int, agent_id: int):
     supabase = get_supabase_client()
+
+    # Fetch agent configuration
+    agent_config_response = supabase.table("agents").select("summarization_prompt, role, content").eq("id", agent_id).maybe_single().execute()
+    if agent_config_response.data is None:
+        raise Exception(f"Agent configuration not found for agent_id: {agent_id}")
+
+    agent_config = agent_config_response.data
+    summarization_prompt_template = agent_config.get("summarization_prompt", "Default summarization prompt if not found")
+    agent_role = agent_config.get("role", "system")
+    agent_content_template = agent_config.get("content", "You are a helpful assistant that summarizes and extracts options.")
+
     # It's assumed openai.api_key is already set as in information_retrieval_task
     if not OPENAI_API_KEY_FROM_ENV:
         print("Warning: OPENAI_API_KEY not found. Summarization features will be limited.")
@@ -128,16 +139,13 @@ def process_and_summarize_task(prompt_id: int):
         summary_text = "Default summary: No specific summary generated."
 
         try:
-            summarization_prompt = (
-                f"Analyze the following text and extract key options or points, and provide a concise summary.\n"
-                f"Text to analyze: \"{content_to_summarize}\"\n\n"
-                f"Respond in a JSON format with two keys: 'options' (a list of strings) and 'summary' (a string)."
-            )
+            user_message_content = summarization_prompt_template.replace("{content_to_summarize}", content_to_summarize)
+
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that summarizes and extracts options."},
-                    {"role": "user", "content": summarization_prompt}
+                    {"role": agent_role, "content": agent_content_template},
+                    {"role": "user", "content": user_message_content}
                 ],
                 max_tokens=700
             )
