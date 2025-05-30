@@ -57,7 +57,7 @@ class State(rx.State):
             
             # Insert into prompts table
             insert_data = {
-                "prompt_text": self.prompt,
+                "user_prompt": self.prompt,
                 "status": "pending_retrieval", # Initial status
                 "created_at": datetime.now().isoformat()
             }
@@ -281,6 +281,17 @@ class State(rx.State):
         self.scheduler_status = "active"
         self.scheduler_error_message = "" # Clear errors on close
 
+    def set_show_scheduler_modal(self, open_val: bool):
+        self.show_scheduler_modal = open_val
+        if not open_val: # If closing, also reset fields (mimics close_scheduler_modal logic)
+            self.current_schedule_id = None
+            self.scheduler_job_name = ""
+            self.scheduler_prompt_text = ""
+            self.scheduler_iteration_type = "daily"
+            self.scheduler_agent_id = ""
+            self.scheduler_status = "active"
+            self.scheduler_error_message = ""
+
     async def save_scheduled_job(self):
         self.scheduler_is_loading = True
         self.scheduler_error_message = ""
@@ -456,106 +467,110 @@ class State(rx.State):
 # --- UI Components for Scheduler ---
 
 def scheduler_modal() -> rx.Component:
-    """UI for creating and editing scheduled jobs."""
-    return rx.modal(
-        rx.modal_overlay(
-            rx.modal_content(
-                rx.modal_header(State.scheduler_modal_title),
-                rx.modal_body(
-                    rx.form.root(
-                        rx.vstack(
-                            rx.form.field(
-                                rx.form.label("Job Name"),
-                                rx.input(
-                                    placeholder="Enter a descriptive name for the job",
-                                    value=State.scheduler_job_name,
-                                    on_change=State.set_scheduler_job_name,
-                                    width="100%",
-                                ),
-                                name="scheduler_job_name",
-                                width="100%",
-                            ),
-                            rx.form.field(
-                                rx.form.label("Prompt Text"),
-                                rx.text_area(
-                                    placeholder="Enter the full prompt text for the job",
-                                    value=State.scheduler_prompt_text,
-                                    on_change=State.set_scheduler_prompt_text,
-                                    width="100%",
-                                    rows=5,
-                                ),
-                                name="scheduler_prompt_text",
-                                width="100%",
-                            ),
-                            rx.form.field(
-                                rx.form.label("Iteration"),
-                                rx.select(
-                                    State.iteration_options, # expects list of dicts with 'label' and 'value'
-                                    placeholder="Select iteration type",
-                                    value=State.scheduler_iteration_type,
-                                    on_change=State.set_scheduler_iteration_type,
-                                    width="100%",
-                                ),
-                                name="scheduler_iteration_type",
-                                width="100%",
-                            ),
-                            rx.form.field(
-                                rx.form.label("Agent ID (Optional)"),
-                                rx.input(
-                                    placeholder="Enter numeric Agent ID if applicable",
-                                    value=State.scheduler_agent_id,
-                                    on_change=State.set_scheduler_agent_id,
-                                    width="100%",
-                                ),
-                                name="scheduler_agent_id",
-                                width="100%",
-                            ),
-                            rx.form.field(
-                                rx.form.label("Status"),
-                                rx.select(
-                                    [
-                                        {"label": "Active", "value": "active"},
-                                        {"label": "Paused", "value": "paused"},
-                                    ],
-                                    placeholder="Select status",
-                                    value=State.scheduler_status,
-                                    on_change=State.set_scheduler_status,
-                                    width="100%",
-                                ),
-                                name="scheduler_status",
-                                width="100%",
-                            ),
-                            rx.cond(
-                                State.scheduler_error_message != "",
-                                rx.callout(
-                                    State.scheduler_error_message,
-                                    icon="alert_triangle",
-                                    color_scheme="red",
-                                    role="alert",
-                                    width="100%",
-                                ),
-                                rx.fragment()
-                            ),
-                            spacing="3",
+    """UI for creating and editing scheduled jobs, using rx.dialog."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(State.scheduler_modal_title),
+            # Form and other content previously in modal_body
+            rx.form.root(
+                rx.vstack(
+                    rx.form.field(
+                        rx.form.label("Job Name"),
+                        rx.input(
+                            placeholder="Enter a descriptive name for the job",
+                            value=State.scheduler_job_name,
+                            on_change=State.set_scheduler_job_name,
                             width="100%",
                         ),
-                        on_submit=State.save_scheduled_job, # Allow Enter to submit form
-                        reset_on_submit=False, # Keep form data for inspection on error
+                        name="scheduler_job_name",
                         width="100%",
-                    )
-                ),
-                rx.modal_footer(
-                    rx.button("Cancel", on_click=State.close_scheduler_modal, variant="soft"),
-                    rx.button(
-                        "Save Job",
-                        on_click=State.save_scheduled_job,
-                        is_loading=State.scheduler_is_loading
                     ),
+                    rx.form.field(
+                        rx.form.label("Prompt Text"),
+                        rx.text_area(
+                            placeholder="Enter the full prompt text for the job",
+                            value=State.scheduler_prompt_text,
+                            on_change=State.set_scheduler_prompt_text,
+                            width="100%",
+                            rows=5,
+                        ),
+                        name="scheduler_prompt_text",
+                        width="100%",
+                    ),
+                    rx.form.field(
+                        rx.form.label("Iteration"),
+                        rx.select(
+                            State.iteration_options,
+                            placeholder="Select iteration type",
+                            value=State.scheduler_iteration_type,
+                            on_change=State.set_scheduler_iteration_type,
+                            width="100%",
+                        ),
+                        name="scheduler_iteration_type",
+                        width="100%",
+                    ),
+                    rx.form.field(
+                        rx.form.label("Agent ID (Optional)"),
+                        rx.input(
+                            placeholder="Enter numeric Agent ID if applicable",
+                            value=State.scheduler_agent_id,
+                            on_change=State.set_scheduler_agent_id,
+                            width="100%",
+                        ),
+                        name="scheduler_agent_id",
+                        width="100%",
+                    ),
+                    rx.form.field(
+                        rx.form.label("Status"),
+                        rx.select(
+                            [
+                                {"label": "Active", "value": "active"},
+                                {"label": "Paused", "value": "paused"},
+                            ],
+                            placeholder="Select status",
+                            value=State.scheduler_status,
+                            on_change=State.set_scheduler_status,
+                            width="100%",
+                        ),
+                        name="scheduler_status",
+                        width="100%",
+                    ),
+                    rx.cond(
+                        State.scheduler_error_message != "",
+                        rx.callout(
+                            State.scheduler_error_message,
+                            icon="alert_triangle",
+                            color_scheme="red",
+                            role="alert",
+                            width="100%",
+                        ),
+                        rx.fragment()
+                    ),
+                    spacing="3",
+                    width="100%",
                 ),
-            )
+                on_submit=State.save_scheduled_job,
+                reset_on_submit=False,
+                width="100%",
+            ),
+            # Buttons previously in modal_footer
+            rx.flex(
+                rx.dialog.close( # Wrap Cancel button
+                    rx.button("Cancel", variant="soft")
+                    # on_click=State.close_scheduler_modal is handled by on_open_change now
+                ),
+                rx.button(
+                    "Save Job",
+                    on_click=State.save_scheduled_job,
+                    is_loading=State.scheduler_is_loading
+                ),
+                spacing="3",
+                margin_top="1em", # equivalent of previous footer spacing
+                justify="end", # Aligns buttons to the right
+            ),
         ),
-        is_open=State.show_scheduler_modal,
-        on_close=State.close_scheduler_modal, # Allow closing with Esc key or overlay click
+        open=State.show_scheduler_modal, # Control visibility
+        on_open_change=State.set_show_scheduler_modal # Handle closing actions
     )
 
 def scheduled_jobs_table() -> rx.Component:
@@ -597,7 +612,16 @@ def scheduled_jobs_table() -> rx.Component:
                     State.scheduled_jobs,
                     lambda job: rx.table.row(
                         rx.table.cell(job.get("job_name", "N/A")),
-                        rx.table.cell(rx.text(job.get("prompt_text", "")[:30] + "...", title=job.get("prompt_text", ""))), # Show snippet, full on hover
+                        rx.table.cell(
+                            rx.text(
+                                rx.cond(
+                                    job.get("prompt_text", "").length() > 30,
+                                    job.get("prompt_text", "").substr(0, 27) + "...",
+                                    job.get("prompt_text", "")
+                                ),
+                                title=job.get("prompt_text", "")
+                            )
+                        ),
                         rx.table.cell(job.get("iteration_type", "N/A")),
                         rx.table.cell(job.get("next_run_at", "N/A")), # Needs formatting
                         rx.table.cell(job.get("last_run_at", "N/A")), # Needs formatting
@@ -731,6 +755,6 @@ def index():
     )
 
 # Add state and page to the app.
-app = rx.App(state=State) # Ensure State is passed if not default
+app = rx.App() # Removed state=State
 app.add_page(index, title="AI Decision Support") # Add a title to the page
 # Not calling app.compile() here as it's usually handled by Reflex CLI
