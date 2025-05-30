@@ -1,3 +1,4 @@
+from datetime import timedelta
 from celery import Celery
 from dotenv import load_dotenv
 load_dotenv()
@@ -22,4 +23,10 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        'scheduler-dispatcher-task-every-minute': {
+            'task': 'app.tasks.scheduler_dispatcher_task',
+            'schedule': timedelta(minutes=1),
+        },
+    }
 )
