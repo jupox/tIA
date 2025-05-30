@@ -211,13 +211,6 @@ The following SQL statements define the necessary tables for the application. Th
 **Table: `prompts`**
 *(SQL for `prompts` table as previously defined - no change)*
 ```sql
-CREATE TABLE prompts (
-    id SERIAL PRIMARY KEY,
-    user_prompt TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 -- Optional: Trigger to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
@@ -228,29 +221,77 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER set_prompts_updated_at
-BEFORE UPDATE ON prompts
-FOR EACH ROW
-EXECUTE FUNCTION trigger_set_timestamp();
-```
-
-**Table: `results`**
-*(SQL for `results` table as previously defined - no change)*
-```sql
-CREATE TABLE results (
-    id SERIAL PRIMARY KEY,
-    prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
-    raw_data JSONB,
-    processed_options JSONB,
-    summary TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE public.results (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    prompt_id BIGINT NOT NULL,
+    raw_data JSONB, -- Stores raw data fetched, e.g., LLM response from retrieval task
+    processed_options JSONB, -- Stores structured options extracted
+    summary TEXT, -- Stores the summary from the process_and_summarize_task
+    mcp_data TEXT, -- << NEW COLUMN for MCP task results (summary with key quotes)
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+    -- CONSTRAINT fk_prompt FOREIGN KEY(prompt_id) REFERENCES public.prompts(id) ON DELETE CASCADE -- Example FK
 );
+
 
 CREATE TRIGGER set_results_updated_at
 BEFORE UPDATE ON results
 FOR EACH ROW
 EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Example Insert for 'results'
+INSERT INTO public.results (prompt_id, raw_data, processed_options, summary, mcp_data) VALUES
+(
+    1, -- Assuming prompt_id 1 exists
+    '{"llm_response": "Initial data about AI developments..."}',
+    '["Option A", "Option B"]',
+    'This is a summary of AI developments.',
+    'MCP Summary: Based on URL [XYZ], key quotes are: \"AI is evolving rapidly.\" ...'
+),
+(
+    2, -- Assuming prompt_id 2 exists
+    '{"placeholder_data": "Raw text about climate change and agriculture..."}',
+    '[]',
+    'Climate change significantly impacts agriculture by affecting crop yields...',
+    NULL -- No MCP task run for this prompt yet
+);
+
+
+
+CREATE TABLE public.agents (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY, -- Or UUID DEFAULT uuid_generate_v4()
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    name TEXT, -- Descriptive name for the agent
+    summarization_prompt TEXT,
+    role TEXT, -- e.g., 'system', 'user', 'assistant'
+    content TEXT -- The content for the system message or a template
+);
+
+INSERT INTO public.agents (name, summarization_prompt, role, content) VALUES
+('General Summarizer', 'Summarize the following text concisely: {content_to_summarize}', 'system', 'You are a helpful assistant that summarizes text.'),
+('Finance Expert', 'Analyze the financial implications in this document and provide a summary with key figures: {content_to_summarize}', 'system', 'You are a finance expert providing insights.');
+
+CREATE TABLE public.prompts (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    user_id UUID, -- If you have user authentication (e.g., references auth.users.id)
+    prompt_text TEXT,
+    status TEXT, -- e.g., 'pending', 'processing_retrieval', 'retrieval_complete', 'processing_summary', 'summary_error', 'completed', 'processing_mcp', 'mcp_complete', 'mcp_error', etc.
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    agent_id BIGINT -- Optional: if a prompt is always tied to a specific agent from the start
+    -- CONSTRAINT fk_agent FOREIGN KEY(agent_id) REFERENCES public.agents(id) -- Example FK
+);
+
+CREATE TRIGGER set_prompts_updated_at
+BEFORE UPDATE ON prompts
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Example Insert for 'prompts'
+INSERT INTO public.prompts (user_id, prompt_text, status, agent_id) VALUES
+(NULL, 'What are the latest developments in AI?', 'pending', 1),
+(NULL, 'Summarize the impact of climate change on agriculture.', 'retrieval_complete', 2);
+
 ```
 **Note on RLS (Row Level Security):** If you are using the `anon` key for Supabase (especially a cloud instance), ensure you have appropriate RLS policies set up on the `prompts` and `results` tables to allow read/write access as needed by your application logic. For backend services like Celery workers using the `service_role` key, RLS is bypassed.
 
