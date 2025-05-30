@@ -87,7 +87,7 @@ def information_retrieval_task(prompt_id: int, user_prompt: str):
 def process_and_summarize_task(prompt_id: int):
     supabase = get_supabase_client()
     # It's assumed openai.api_key is already set as in information_retrieval_task
-    if not openai.api_key:
+    if not OPENAI_API_KEY_FROM_ENV:
         print("Warning: OPENAI_API_KEY not found. Summarization features will be limited.")
         # Update prompt status to indicate an error due to configuration
         error_status_payload = {"status": "summary_error_config", "updated_at": datetime.now().isoformat()}
