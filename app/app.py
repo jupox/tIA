@@ -33,7 +33,7 @@ class State(rx.State):
             
             # Insert into prompts table
             insert_data = {
-                "user_prompt": self.prompt,
+                "prompt_text": self.prompt,
                 "status": "pending_retrieval", # Initial status
                 "created_at": datetime.now().isoformat()
             }
