@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis: # Our project's Redis service
     image: "redis:alpine"
