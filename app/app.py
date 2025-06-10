@@ -39,6 +39,7 @@ class State(rx.State):
         {"label": "Weekly - Saturday (at 00:00 UTC next occurrence)", "value": "weekly_saturday"},
         {"label": "Weekly - Sunday (at 00:00 UTC next occurrence)", "value": "weekly_sunday"},
     ]
+    iteration_options_values: list[str] = [opt['value'] for opt in iteration_options]
 
     def handle_submit(self):
         if not self.prompt.strip():
@@ -57,7 +58,7 @@ class State(rx.State):
             
             # Insert into prompts table
             insert_data = {
-                "user_prompt": self.prompt,
+                "prompt_text": self.prompt,
                 "status": "pending_retrieval", # Initial status
                 "created_at": datetime.now().isoformat()
             }
@@ -68,7 +69,7 @@ class State(rx.State):
                 self.result = f"Prompt submitted (ID: {self.current_prompt_id}). Processing..."
                 
                 # Call the first Celery task
-                information_retrieval_task.delay(prompt_id=self.current_prompt_id, user_prompt=self.prompt)
+                information_retrieval_task.delay(prompt_id=self.current_prompt_id, prompt_text=self.prompt)
                 # Optionally, chain the next task if retrieval is synchronous or handle it purely by status
                 # For now, let's assume information_retrieval_task will trigger process_and_summarize_task
                 # or we'll rely on status checks. The original plan has them separate.
@@ -127,7 +128,7 @@ class State(rx.State):
                      self.result = f"Status: {current_status}. Summary generation is pending. Click Refresh again shortly."
                      # Trigger the next task if it hasn't been triggered automatically
                      # This is a good place to ensure the summarization task is called
-                     process_and_summarize_task.delay(prompt_id=self.current_prompt_id)                
+                     process_and_summarize_task.delay(prompt_id=self.current_prompt_id, agent_id=1) # Assuming agent_id is not needed here, or set to None     
                 elif current_status == "retrieval_error":
                     self.error_message = "An error occurred while fetching information. Please try submitting again or contact support if the issue persists."
                     self.result = "" # Clear general result message
@@ -489,10 +490,10 @@ def scheduler_modal() -> rx.Component:
                         rx.form.label("Prompt Text"),
                         rx.text_area(
                             placeholder="Enter the full prompt text for the job",
-                            value=State.scheduler_prompt_text,
+                            value=str(State.scheduler_prompt_text),
                             on_change=State.set_scheduler_prompt_text,
                             width="100%",
-                            rows=5,
+                            rows="5",
                         ),
                         name="scheduler_prompt_text",
                         width="100%",
@@ -500,9 +501,9 @@ def scheduler_modal() -> rx.Component:
                     rx.form.field(
                         rx.form.label("Iteration"),
                         rx.select(
-                            State.iteration_options,
+                            State.iteration_options_values,
                             placeholder="Select iteration type",
-                            value=State.scheduler_iteration_type,
+                            value=str(State.scheduler_iteration_type),
                             on_change=State.set_scheduler_iteration_type,
                             width="100%",
                         ),
@@ -524,8 +525,8 @@ def scheduler_modal() -> rx.Component:
                         rx.form.label("Status"),
                         rx.select(
                             [
-                                {"label": "Active", "value": "active"},
-                                {"label": "Paused", "value": "paused"},
+                                "active",
+                                "paused",
                             ],
                             placeholder="Select status",
                             value=State.scheduler_status,
@@ -539,7 +540,7 @@ def scheduler_modal() -> rx.Component:
                         State.scheduler_error_message != "",
                         rx.callout(
                             State.scheduler_error_message,
-                            icon="alert_triangle",
+                            icon="circle_alert",
                             color_scheme="red",
                             role="alert",
                             width="100%",
@@ -587,7 +588,7 @@ def scheduled_jobs_table() -> rx.Component:
             State.scheduler_error_message != "",
              rx.callout(
                 State.scheduler_error_message, # Display errors from loading/actions here too
-                icon="alert_triangle",
+                icon="circle_alert",
                 color_scheme="red",
                 role="alert",
                 margin_bottom="1em",
@@ -613,14 +614,7 @@ def scheduled_jobs_table() -> rx.Component:
                     lambda job: rx.table.row(
                         rx.table.cell(job.get("job_name", "N/A")),
                         rx.table.cell(
-                            rx.text(
-                                rx.cond(
-                                    job.get("prompt_text", "").length() > 30,
-                                    job.get("prompt_text", "").substr(0, 27) + "...",
-                                    job.get("prompt_text", "")
-                                ),
-                                title=job.get("prompt_text", "")
-                            )
+                            job.get("prompt_text", "")
                         ),
                         rx.table.cell(job.get("iteration_type", "N/A")),
                         rx.table.cell(job.get("next_run_at", "N/A")), # Needs formatting
@@ -657,88 +651,107 @@ def scheduled_jobs_table() -> rx.Component:
 
 
 def index():
+
+    
     return rx.container(
         rx.vstack(
             rx.heading("AI Decision Support Tool Task", size="9"),
             rx.heading("Task IA - TIA", size="6", margin_bottom="1em"),
             
-            # Main Prompt Area
-            rx.heading("Manual Prompt Submission", size="5", margin_top="1em", margin_bottom="0.5em"),
-            rx.input(
-                placeholder="Enter your decision prompt here...",
-                value=State.prompt, # Ensure two-way binding if needed or use on_change
-                on_change=State.set_prompt, # Or on_blur if preferred
-                style={"margin_bottom": "0.5em", "width": "100%"},
-                is_disabled=State.is_loading,
-            ),
-            
-            rx.hstack(
-                rx.button(
-                    "Submit Prompt",
-                    on_click=State.handle_submit,
-                    is_loading=State.is_loading,
-                    is_disabled=State.is_loading,
+            # Main Prompt Table Area
+            rx.heading("Manual Prompt Submission Table", size="5", margin_top="1em", margin_bottom="0.5em"),
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("Prompt"),
+                        rx.table.column_header_cell("Actions"),
+                        rx.table.column_header_cell("Status"),
+                    )
                 ),
-                rx.button(
-                    "Refresh Results",
-                    on_click=State.fetch_results,
-                    is_disabled=rx.cond(State.current_prompt_id.is_none() | State.is_loading, True, False),
-                ),
-                # Removed Manage Schedules button from here, will be part of scheduled_jobs_table section
-                spacing="3", # Increased spacing
-                style={"margin_bottom": "1em"}
-            ),
-            
-            # Main Display area for manual prompts
-            rx.vstack(
-                rx.cond(
-                    State.error_message != "",
-                    rx.callout( # Using rx.callout for better styling of errors
-                        State.error_message,
-                        icon="alert_triangle",
-                        color_scheme="red",
-                        role="alert",
-                        width="100%",
-                        margin_bottom="1em"
-                    ),
-                    rx.fragment()
-                ),
-
-                rx.text(State.result, margin_bottom="0.5em", font_style="italic"),
-
-                rx.cond(
-                    State.summary != "",
-                    rx.box( # Using rx.box for better structure and potential styling
-                        rx.heading("Summary:", size="4", margin_bottom="0.5em"), # Smaller heading
-                        rx.text(State.summary, white_space="pre-wrap"),
-                        width="100%",
-                        padding_y="0.5em", # Padding for vertical space
-                    ),
-                    rx.fragment()
-                ),
-
-                rx.cond(
-                    State.processed_options.length() > 0,
-                    rx.box(
-                        rx.heading("Processed Options:", size="4", margin_bottom="0.5em"),
-                        rx.list.ordered(
-                            items=State.processed_options,
-                            # render_item=lambda item: rx.list.item(rx.text(item)), # Corrected render_item
+                rx.table.body(
+                    rx.table.row(
+                        rx.table.cell(
+                            rx.input(
+                                placeholder="Enter your decision prompt here...",
+                                value=State.prompt,
+                                on_change=State.set_prompt,
+                                style={"width": "100%"},
+                                is_disabled=State.is_loading,
+                            ),
                         ),
-                        width="100%",
-                        padding_y="0.5em",
+                        rx.table.cell(
+                            rx.hstack(
+                                rx.button(
+                                    "Submit",
+                                    icon="play",
+                                    on_click=State.handle_submit,
+                                    is_loading=State.is_loading,
+                                    is_disabled=State.is_loading | (State.prompt.strip() == ""),
+                                    size="2",
+                                ),
+                                rx.button(
+                                    "Refresh",
+                                    on_click=State.fetch_results,
+                                    is_disabled=rx.cond(State.current_prompt_id.is_none() | State.is_loading, True, False),
+                                    size="2",
+                                ),
+                                spacing="2",
+                            ),
+                        ),
+                        rx.table.cell(
+                            rx.cond(
+                                State.is_loading,
+                                rx.text("Loading...", color="orange"),
+                                rx.cond(
+                                    State.error_message != "",
+                                    rx.text("Error", color="red"),
+                                    rx.cond(
+                                        State.result != "" and State.result != "Output will appear here.",
+                                        rx.text("Completed", color="green"),
+                                        rx.text("Idle", color="gray")
+                                    )
+                                )
+                            )
+                        ),
                     ),
-                    rx.fragment()
                 ),
-                spacing="2", # Increased spacing
-                width="100%",
-                padding="1em",
-                border="1px solid #ddd",
-                border_radius="md",
-                min_height="150px" # Adjusted min height
             ),
-
-            rx.divider(width="100%", margin_y="2em"), # Visual separator
+            rx.cond(
+                State.error_message != "",
+                rx.callout(
+                    State.error_message,
+                    icon="circle_alert",
+                    color_scheme="red",
+                    role="alert",
+                    width="100%",
+                    margin_bottom="1em"
+                ),
+                rx.fragment()
+            ),
+            rx.text(State.result, margin_bottom="0.5em", font_style="italic"),
+            rx.cond(
+                State.summary != "",
+                rx.box(
+                    rx.heading("Summary:", size="4", margin_bottom="0.5em"),
+                    rx.text(State.summary, white_space="pre-wrap"),
+                    width="100%",
+                    padding_y="0.5em",
+                ),
+                rx.fragment()
+            ),
+            rx.cond(
+                State.processed_options.length() > 0,
+                rx.box(
+                    rx.heading("Processed Options:", size="4", margin_bottom="0.5em"),
+                    rx.list.ordered(
+                        items=State.processed_options,
+                    ),
+                    width="100%",
+                    padding_y="0.5em",
+                ),
+                rx.fragment()
+            ),
+            rx.divider(width="100%", margin_y="2em"),
 
             # Scheduler UI Section
             scheduled_jobs_table(), # Add the table here

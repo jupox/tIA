@@ -21,7 +21,7 @@ else:
 
 
 @celery_app.task
-def information_retrieval_task(prompt_id: int, user_prompt: str):
+def information_retrieval_task(prompt_id: int, prompt_text: str):
     supabase = get_supabase_client() # This will raise ValueError if keys are default
 
     try:
@@ -37,7 +37,7 @@ def information_retrieval_task(prompt_id: int, user_prompt: str):
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": "You are a helpful assistant that summarizes and extracts options."},
-                        {"role": "user", "content": f"Gather key information and potential options related to the following query: {user_prompt}. Present it as a structured summary."}
+                        {"role": "user", "content": f"Gather key information and potential options related to the following query: {prompt_text}. Present it as a structured summary."}
                     ],
                     max_tokens=500
                 )
@@ -45,10 +45,10 @@ def information_retrieval_task(prompt_id: int, user_prompt: str):
             except Exception as e:
                 print(f"OpenAI call failed for prompt_id {prompt_id}: {e}")
                 raw_data_content["error"] = f"OpenAI call failed: {str(e)}"
-                raw_data_content["placeholder_data"] = f"Simulated search data for '{user_prompt}'. Actual web search would go here."
+                raw_data_content["placeholder_data"] = f"Simulated search data for '{prompt_text}'. Actual web search would go here."
         else:
             print(f"OpenAI API key not configured. Using placeholder data for prompt_id {prompt_id}.")
-            raw_data_content["placeholder_data"] = f"Simulated search data for '{user_prompt}' (OpenAI API key not configured). Actual web search would go here."
+            raw_data_content["placeholder_data"] = f"Simulated search data for '{prompt_text}' (OpenAI API key not configured). Actual web search would go here."
         
         raw_data_json = json.dumps(raw_data_content)
 
@@ -100,7 +100,7 @@ def information_retrieval_task(prompt_id: int, user_prompt: str):
 
 
 @celery_app.task
-def process_and_summarize_task(prompt_id: int, agent_id: int):
+def process_and_summarize_task(prompt_id: int, agent_id: int = 1):
     supabase = get_supabase_client()
 
     # Fetch agent configuration
@@ -466,7 +466,7 @@ def scheduler_dispatcher_task():
             try:
                 # 1. Create a new entry in the prompts table
                 new_prompt_payload = {
-                    "user_prompt": job['prompt_text'],
+                    "prompt_text": job['prompt_text'],
                     "status": "pending_retrieval", # Initial status
                     "created_at": now_utc.isoformat(),
                     "source_job_id": job['id'], # Link back to the scheduled job
@@ -497,8 +497,8 @@ def scheduler_dispatcher_task():
 
                 # 2. Call information_retrieval_task
                 # Ensure all necessary arguments for information_retrieval_task are passed.
-                # Based on its definition: information_retrieval_task(prompt_id: int, user_prompt: str)
-                information_retrieval_task.delay(prompt_id=new_prompt_id, user_prompt=job['prompt_text'])
+                # Based on its definition: information_retrieval_task(prompt_id: int, prompt_text: str)
+                information_retrieval_task.delay(prompt_id=new_prompt_id, prompt_text=job['prompt_text'])
                 print(f"Dispatched information_retrieval_task for prompt ID: {new_prompt_id}")
 
                 # 3. Calculate next run time
@@ -575,7 +575,7 @@ def force_run_scheduled_job_task(schedule_id: int):
 
         # Create a new prompt
         new_prompt_payload = {
-            "user_prompt": job['prompt_text'],
+            "prompt_text": job['prompt_text'],
             "status": "pending_retrieval", # Initial status for a new prompt
             "created_at": now_utc.isoformat(),
             "source_job_id": job['id'],
@@ -604,7 +604,7 @@ def force_run_scheduled_job_task(schedule_id: int):
         print(f"Successfully created prompt ID: {new_prompt_id} for force-run job ID: {job['id']}")
 
         # Dispatch the information retrieval task
-        information_retrieval_task.delay(prompt_id=new_prompt_id, user_prompt=job['prompt_text'])
+        information_retrieval_task.delay(prompt_id=new_prompt_id, prompt_text=job['prompt_text'])
         print(f"Dispatched information_retrieval_task for prompt ID: {new_prompt_id} (force run)")
 
         # Update the scheduled job's last run info
