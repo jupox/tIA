@@ -17,12 +17,14 @@ case "$1" in
             export PATH="$PATH:/home/swebot/.local/bin"
         fi
 
+        pip install --upgrade pip
+        pip install --user reflex --upgrade
+
         exec reflex run --env prod
         ;;
     worker)
         echo "Starting Celery worker..."
         
-        # Add /home/swebot/.local/bin to PATH if it's not already there
         if ! echo "$PATH" | grep -q "/home/swebot/.local/bin"; then
             export PATH="$PATH:/home/swebot/.local/bin"
         fi
